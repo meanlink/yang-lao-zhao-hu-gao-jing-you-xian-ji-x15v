@@ -1,0 +1,91 @@
+name: eldercare-alert-priority
+x-python: &python
+  build: ./backend
+  image: eldercare-alert-priority-python:local
+  environment:
+    PGHOST: db
+    PGDATABASE: care
+    PGUSER: care
+    PGPASSWORD: ${POSTGRES_PASSWORD:-care-demo-db}
+    JWT_SECRET: ${JWT_SECRET:-eldercare-local-demo-key-replace-before-sharing}
+    SEED_DEMO: ${SEED_DEMO:-true}
+    REDIS_URL: redis://redis:6379/0
+    MODEL_DIR: /shared
+  volumes:
+    - model_files:/shared
+services:
+  frontend:
+    container_name: ${COMPOSE_PROJECT_NAME:-eldercare-alert-priority}-frontend
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-18248}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O /dev/null http://127.0.0.1/api/health']
+      interval: 3s
+      timeout: 2s
+      retries: 15
+  backend:
+    <<: *python
+    container_name: ${COMPOSE_PROJECT_NAME:-eldercare-alert-priority}-backend
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-19248}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2)']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  worker:
+    <<: *python
+    container_name: ${COMPOSE_PROJECT_NAME:-eldercare-alert-priority}-worker
+    command: [python, -m, src.worker]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, src.worker, --health]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+  db:
+    container_name: ${COMPOSE_PROJECT_NAME:-eldercare-alert-priority}-db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: care
+      POSTGRES_USER: care
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-care-demo-db}
+    volumes:
+      - care_db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-17748}:5432"
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U care -d care']
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  redis:
+    container_name: ${COMPOSE_PROJECT_NAME:-eldercare-alert-priority}-redis
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - care_redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+volumes:
+  care_db:
+  care_redis:
+  model_files:
