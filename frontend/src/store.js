@@ -1,6 +1,6 @@
 export const state = {
   token: sessionStorage.getItem('zhaohui-token'), user:null, unit:'',
-  observationResident:'', supplement:null, includeClosed:false, renderVersion:0,
+  observationResident:'', supplement:null, includeClosed:false, trialRun:null, renderVersion:0,
 };
 
 export function setSession(token, user) {
@@ -10,6 +10,7 @@ export function setSession(token, user) {
   state.observationResident = '';
   state.supplement = null;
   state.includeClosed = false;
+  state.trialRun = null;
   if (token) sessionStorage.setItem('zhaohui-token', token);
   else sessionStorage.removeItem('zhaohui-token');
 }

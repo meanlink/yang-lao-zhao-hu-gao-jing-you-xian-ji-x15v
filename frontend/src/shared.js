@@ -5,6 +5,8 @@ export const HANDOVERS = {open:'待签收', signed:'已签收', superseded:'已�
 export const SHIFTS = {day:'早班', swing:'中班', night:'晚班'};
 export const PRIORITIES = {1:'常规跟进', 2:'尽快跟进', 3:'优先处理'};
 export const FEATURES = {missed_round:'计划巡房未完成', repeated_call:'一小时内重复呼叫', transfer_support:'请求协助移位', unfinished_task:'照护任务尚未完成'};
+export const MODEL_VERSIONS = {draft:'待启用', active:'使用中', archived:'已停用'};
+export const TRIAL_RUNS = {running:'试算中', completed:'已完成'};
 
 export function escape(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -17,7 +19,7 @@ export function time(value) {
 export function pill(label, tone='neutral') { return `<span class="pill ${tone}">${escape(label)}</span>`; }
 export function priority(level) { return level ? pill(PRIORITIES[level], `level-${level}`) : pill('未分级'); }
 export function status(value, labels=ALERTS) {
-  const tone = ['incomplete','superseded'].includes(value) ? 'warn' : ['confirmed','signed','closed','scored'].includes(value) ? 'good' : 'neutral';
+  const tone = ['incomplete','superseded'].includes(value) ? 'warn' : ['confirmed','signed','closed','scored','active','completed'].includes(value) ? 'good' : 'neutral';
   return pill(labels[value] || value, tone);
 }
 export function empty(message) { return `<div class="empty">${escape(message)}</div>`; }

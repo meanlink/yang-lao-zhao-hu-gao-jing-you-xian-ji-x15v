@@ -60,6 +60,9 @@ def enter_observation(db, data, actor):
     resident = resident_for_update(db, data.resident_id)
     if not resident['active']:
         raise HTTPException(409, '住户已暂停照护档案')
+    version = db.execute("SELECT id FROM model_versions WHERE status='active'").fetchone()
+    if version is None:
+        raise HTTPException(503, '分级模型尚未就绪，请稍后重试')
     case = db.execute("SELECT * FROM alerts WHERE resident_id=%s AND status <> 'closed'",
                       (data.resident_id,)).fetchone()
     existing_case = case is not None
@@ -71,9 +74,9 @@ def enter_observation(db, data, actor):
     try:
         row = db.execute(
             '''INSERT INTO observations(ref,resident_id,alert_id,staff_id,author_note,
-                 missed_round,repeated_call,transfer_support,unfinished_task,status)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
-            (data.ref, data.resident_id, case['id'], actor, data.author_note, *values, status),
+                 missed_round,repeated_call,transfer_support,unfinished_task,status,model_version_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
+            (data.ref, data.resident_id, case['id'], actor, data.author_note, *values, status, version['id']),
         ).fetchone()
     except UniqueViolation as exc:
         raise HTTPException(409, '观察编号已使用，请先核对记录') from exc
@@ -187,7 +190,7 @@ def sign(db, handover_id, data, actor):
     return result
 
 
-def score_one(db, model, resident_id=None):
+def score_one(db, models, resident_id=None):
     resident = db.execute(
         '''SELECT r.id FROM residents r JOIN LATERAL (
                SELECT id FROM observations WHERE resident_id=r.id AND status='queued' ORDER BY id LIMIT 1
@@ -200,12 +203,14 @@ def score_one(db, model, resident_id=None):
                      (resident['id'],)).fetchone()
     if job is None:
         return None
+    model, version = models.for_version(db, job['model_version_id'])
     result = model.score(job)
+    result['model_version_id'] = version['id']
     db.execute("UPDATE observations SET status='scored',result=%s,scored_at=now() WHERE id=%s",
                (Jsonb(result), job['id']))
     db.execute('UPDATE alerts SET priority=GREATEST(priority,%s) WHERE id=%s',
                (result['candidate'], job['alert_id']))
     recompute_status(db, job['alert_id'])
     audit(db, None, 'observation_scored', 'observation', job['id'],
-          candidate=result['candidate'], model=result['model_checksum'])
+          candidate=result['candidate'], model=result['model_checksum'], model_version=version['label'])
     return job['id']

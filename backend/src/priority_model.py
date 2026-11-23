@@ -13,12 +13,16 @@ CORPUS = Path(__file__).resolve().parents[1] / 'scripts' / 'synthetic_shift_labe
 class PriorityModel:
     """Laplace-smoothed Bernoulli naive Bayes over four binary workflow signals."""
 
-    def __init__(self, corpus=CORPUS):
-        raw = corpus.read_bytes()
+    def __init__(self, corpus=CORPUS, *, corpus_text=None):
+        raw = corpus_text.encode('utf-8') if corpus_text is not None else corpus.read_bytes()
         self.checksum = hashlib.sha256(raw).hexdigest()
-        rows = list(csv.DictReader(io.StringIO(raw.decode('utf-8'))))
-        counts = Counter(int(row['priority']) for row in rows)
-        if set(counts) != {1, 2, 3} or any(row[key] not in ('0', '1') for row in rows for key in FEATURES):
+        try:
+            rows = list(csv.DictReader(io.StringIO(raw.decode('utf-8'))))
+            counts = Counter(int(row['priority']) for row in rows)
+            signals_ok = all(row[key] in ('0', '1') for row in rows for key in FEATURES)
+        except (KeyError, TypeError, ValueError):
+            raise ValueError('Training corpus requires all three priorities and binary signals') from None
+        if set(counts) != {1, 2, 3} or not signals_ok:
             raise ValueError('Training corpus requires all three priorities and binary signals')
         self.priors = {level: (count + 1) / (len(rows) + 3) for level, count in counts.items()}
         self.present = {
@@ -28,6 +32,10 @@ class PriorityModel:
         }
         self.description = {'kind': 'Bernoulli NB', 'checksum': self.checksum,
                             'training_rows': len(rows), 'class_sizes': dict(counts), 'alpha': 1}
+
+    @classmethod
+    def from_text(cls, text):
+        return cls(corpus_text=text)
 
     def score(self, signals):
         if any(type(signals[key]) is not bool for key in FEATURES):

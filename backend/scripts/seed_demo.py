@@ -1,12 +1,18 @@
 import json
+from pathlib import Path
+
+from psycopg.types.json import Jsonb
 
 from scripts.seed_coverage import seed_coverage_case
 
 from src.auth import hash_password
 from src.db import connect, migrate
+from src.model_versions import ModelCache, ensure_base_version
 from src.priority_model import PriorityModel
 from src.schemas import Handover, NewObservation, Review
 from src.workflow import dispatch, enter_observation, review, score_one
+
+V2_CORPUS = Path(__file__).resolve().parent / 'synthetic_shift_labels_v2.csv'
 
 USERS = [
     ('carer@zhaohui.local', '赵晴', 'carer'),
@@ -29,7 +35,8 @@ OBSERVATIONS = [
 
 
 def seed():
-    model = PriorityModel()
+    ensure_base_version()
+    models = ModelCache()
     with connect() as db:
         db.execute('SELECT pg_advisory_xact_lock(1049002)')
         for email, name, role in USERS:
@@ -46,6 +53,13 @@ def seed():
                 inserted_residents[inserted['code']] = inserted['id']
         staff = {row['role']: row['id'] for row in db.execute('SELECT id, role FROM staff WHERE email=ANY(%s)',
                                                             ([row[0] for row in USERS],))}
+        v2_corpus = V2_CORPUS.read_text(encoding='utf-8')
+        v2_model = PriorityModel.from_text(v2_corpus)
+        db.execute(
+            '''INSERT INTO model_versions(label,corpus,checksum,description,registered_by)
+               VALUES (%s,%s,%s,%s,%s) ON CONFLICT (checksum) DO NOTHING''',
+            ('演示样本 v2', v2_corpus, v2_model.checksum, Jsonb(v2_model.description), staff['lead']),
+        )
         for ref, code, signals, note in OBSERVATIONS:
             if code not in inserted_residents or db.execute('SELECT 1 FROM observations WHERE ref=%s', (ref,)).fetchone():
                 continue
@@ -53,7 +67,7 @@ def seed():
                 ref=ref, resident_id=inserted_residents[code], author_note=note, missed_round=signals[0],
                 repeated_call=signals[1], transfer_support=signals[2], unfinished_task=signals[3]), staff['carer'])
             if code == 'ZH-312':
-                while score_one(db, model, inserted_residents[code]):
+                while score_one(db, models, inserted_residents[code]):
                     pass
                 alert = db.execute('SELECT * FROM alerts WHERE id=%s', (case['alert_id'],)).fetchone()
                 if alert['status'] == 'review':
@@ -63,7 +77,8 @@ def seed():
         seed_coverage_case(db, staff['lead'])
         return {table: db.execute(f'SELECT count(*) AS n FROM {table}').fetchone()['n']
                 for table in ('staff', 'residents', 'observations', 'alerts', 'handovers', 'audit_events',
-                              'shift_coverage', 'response_checklists', 'response_check_items', 'response_check_events')}
+                              'shift_coverage', 'response_checklists', 'response_check_items', 'response_check_events',
+                              'model_versions', 'trial_runs')}
 
 
 if __name__ == '__main__':

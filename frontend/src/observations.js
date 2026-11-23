@@ -23,6 +23,7 @@ export async function observationsPage(state) {
     ${rows.length ? rows.map(r => `<article class="journal-entry"><div class="data-line">${status(r.status, OBSERVATIONS)}<span>${escape(r.ref)} · ${time(r.observed_at)}</span></div>
     <h3>${escape(r.room)} · ${escape(r.resident_name)}</h3><p>${escape(r.author_note)}</p>
     ${r.status === 'incomplete' ? `<p class="missing">待核对 ${Object.entries(FEATURES).filter(([key])=>r[key]===null).map(([,label])=>label).join('、')}</p>` : ''}
-    <div class="data-line"><span>记录人 ${escape(r.author_name)}</span>${canWrite && r.status==='incomplete' ? `<button type="button" class="text-link" data-action="supplement" data-value="${r.id}">补录</button>` : ''}<a href="#alerts/${r.alert_id}">查看告警</a></div></article>`).join('') : empty('暂无观察。可选择其他住户或录入新观察。')}
+    <div class="data-line"><span>记录人 ${escape(r.author_name)}</span><span>${r.status === 'scored' ? '分级版本' : '登记版本'} ${escape(r.model_label || '—')}</span></div>
+    <div class="data-line"><span></span>${canWrite && r.status==='incomplete' ? `<button type="button" class="text-link" data-action="supplement" data-value="${r.id}">补录</button>` : ''}<a href="#alerts/${r.alert_id}">查看告警</a></div></article>`).join('') : empty('暂无观察。可选择其他住户或录入新观察。')}
     </section>${editor}</div>`;
 }

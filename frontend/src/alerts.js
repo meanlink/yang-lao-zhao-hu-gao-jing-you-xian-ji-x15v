@@ -13,7 +13,7 @@ function resultBlock(observation, currentPriority) {
     ${result.candidate < currentPriority ? '<p class="missing">仍采用当前较高告警等级，直到交班签收。</p>' : ''}
     <div class="meters">${bars}</div>
     <dl class="contributions">${result.contributions.map(item => `<div><dt>${FEATURES[item.feature]} <span>${item.value ? '是' : '否'}</span></dt><dd>${item.log_odds >= 0 ? '+' : ''}${item.log_odds.toFixed(2)}</dd></div>`).join('')}</dl>
-    <small>数值为各信号对候选与次选的对数赔率贡献。先验项 ${result.prior_log_odds.toFixed(2)}。模型 ${escape(result.model_checksum.slice(0,12))}。</small></section>`;
+    <small>数值为各信号对候选与次选的对数赔率贡献。先验项 ${result.prior_log_odds.toFixed(2)}。分级版本 ${escape(observation.model_label || `校验 ${result.model_checksum.slice(0,12)}`)}。</small></section>`;
 }
 
 function detailBlock(row, canReview) {
@@ -33,7 +33,7 @@ function detailBlock(row, canReview) {
     ${row.active_response_id ? '<div class="note warn">本条告警还有在办的照护响应任务，完成或撤销后方可交班。</div>' : ''}
     ${row.review_note ? `<div class="review-memo"><strong>${escape(row.reviewer_name)} · ${time(row.reviewed_at)}</strong><p>${escape(row.review_note)}</p></div>` : ''}
     ${action}${scored ? resultBlock(scored,row.priority) : ''}
-    <section class="evidence-list"><h3>关联观察</h3>${row.observations.map(obs => `<div>${status(obs.status,OBSERVATIONS)} <strong>${escape(obs.ref)}</strong><p>${escape(obs.author_note)}</p></div>`).join('')}</section></div>`;
+    <section class="evidence-list"><h3>关联观察</h3>${row.observations.map(obs => `<div>${status(obs.status,OBSERVATIONS)} <strong>${escape(obs.ref)}</strong> <small>${escape(obs.model_label || '')}</small><p>${escape(obs.author_note)}</p></div>`).join('')}</section></div>`;
 }
 
 export async function alertsPage(state, activeId) {

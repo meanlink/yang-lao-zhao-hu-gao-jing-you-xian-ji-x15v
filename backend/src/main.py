@@ -11,9 +11,10 @@ from psycopg import OperationalError
 from redis import RedisError
 
 from scripts.seed_demo import seed
-from . import checklist_router, coverage_router, operations_router, workflow
+from . import checklist_router, coverage_router, model_router, operations_router, workflow
 from .auth import current_staff, hash_password, require, token_for, verify_password
 from .db import MODEL_DIR, audit, cache, connect, migrate
+from .model_versions import ensure_base_version
 from .schemas import (AlertStatus, Credentials, Handover, NewObservation, Receipt, Resident,
                       Review, Role, Signals)
 
@@ -27,6 +28,7 @@ receiver = require(Role.RECEIVER)
 @asynccontextmanager
 async def lifespan(app):
     migrate()
+    ensure_base_version()
     if os.getenv('SEED_DEMO', 'true').lower() == 'true':
         try:
             log.info('Seed counts %s', seed())
@@ -39,6 +41,7 @@ app = FastAPI(title='朝晖照护交接台', lifespan=lifespan)
 app.include_router(operations_router.router)
 app.include_router(coverage_router.router)
 app.include_router(checklist_router.router)
+app.include_router(model_router.router)
 
 
 @app.middleware('http')
@@ -124,8 +127,10 @@ def register(data: Resident, staff=Depends(lead)):
 def observations(staff=Depends(current_staff), resident_id: int | None = None):
     with connect() as db:
         return db.execute(
-            '''SELECT o.*,r.name AS resident_name,r.room,s.name AS author_name FROM observations o
+            '''SELECT o.*,r.name AS resident_name,r.room,s.name AS author_name,m.label AS model_label
+               FROM observations o
                JOIN residents r ON r.id=o.resident_id JOIN staff s ON s.id=o.staff_id
+               LEFT JOIN model_versions m ON m.id=o.model_version_id
                WHERE (%s::bigint IS NULL OR o.resident_id=%s) ORDER BY o.id DESC LIMIT 150''',
             (resident_id, resident_id),
         ).fetchall()
@@ -169,8 +174,10 @@ def alert_detail(alert_id: int, staff=Depends(current_staff)):
             raise HTTPException(404, '告警不存在')
         response = workflow.active_response(db, alert_id)
         alert['active_response_id'] = response['id'] if response else None
-        alert['observations'] = db.execute('SELECT * FROM observations WHERE alert_id=%s ORDER BY id DESC',
-                                           (alert_id,)).fetchall()
+        alert['observations'] = db.execute(
+            '''SELECT o.*, m.label AS model_label FROM observations o
+               LEFT JOIN model_versions m ON m.id=o.model_version_id
+               WHERE o.alert_id=%s ORDER BY o.id DESC''', (alert_id,)).fetchall()
         model = MODEL_DIR / 'priority-model.json'
         alert['model'] = json.loads(model.read_text()) if model.exists() else None
         return alert

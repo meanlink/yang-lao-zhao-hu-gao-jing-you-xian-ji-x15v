@@ -56,6 +56,15 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 候选与次选之间的对数分数差，等于先验对数赔率与四项特征贡献之和。界面展示观测取值和贡献的正负。模型输出同时保留语料 SHA-256，便于重现分级结果。空白字段存在时，观察留在待补表行中，worker 只领取完整观察。每个住户同时至多有一条在办告警，本轮实际等级取历史最高确认或候选等级，直到接班员签收。
 
+## 分级版本与试算
+
+1. 值班长在「分级版本」粘贴新版语料并保存为待启用版本。语料校验沿用三类等级与四项是/否信号的规则，SHA-256 相同的语料不能重复登记。
+2. 对待启用版本创建试算：系统把当前全部已评分观察快照为一个批次，worker 在正式评分之余逐条用新版重算，结果只写入试算明细，正式告警的等级与队列不受影响。批次中断后从待算条目续跑，已算过的观察不会重复计入差异。
+3. 值班长核对批次内每条观察试算前后的等级后启用新版。启用在一个事务内完成旧版停用与新版生效，任一步失败都保留旧版。
+4. 启用后新登记的观察按新版分级；此前已排队和待补的观察仍按登记时钉住的版本评分。观察流水与告警详情都标注每条观察实际使用的版本。
+
+`backend/migrations/005_model_versions.sql` 建版本、批次与明细表，`backend/src/model_versions.py`、`model_router.py`、`model_schemas.py` 负责版本登记、原子启用与试算领取，前端页面在 `frontend/src/modelVersions.js`。种子会额外登记一份待启用的「演示样本 v2」（`backend/scripts/synthetic_shift_labels_v2.csv`），可直接创建试算查看差异。
+
 ## 代码结构
 
 | 路径 | 职责 |
@@ -64,7 +73,9 @@ docker compose exec -T backend python -m scripts.seed_demo
 | `backend/src/schemas.py`、`workflow.py`、`main.py` | 校验、状态转换及 FastAPI 路由 |
 | `backend/src/auth.py` | PBKDF2 密码、JWT 和角色依赖 |
 | `backend/src/priority_model.py`、`worker.py` | 拟合、计算解释、持久化评分与心跳 |
+| `backend/src/model_versions.py`、`model_router.py` | 分级版本登记、原子启用与试算续跑 |
 | `frontend/src/{residents,observations,alerts,handovers}.js` | 四个业务模块 |
+| `frontend/src/modelVersions.js` | 版本清单、试算批次与差异核对 |
 | `frontend/src/{app,store,shared}.js` | 路由、请求、会话、显示与表单工具 |
 
 角色、等级、告警状态和班次分别在 Python `schemas.py` 的 `Role`、`Priority`、`AlertStatus`、`Shift`，SQL 迁移的约束，以及前端 `shared.js` 的 `ROLES`、`PRIORITIES`、`ALERTS`、`SHIFTS`。观察及交班的状态值贯穿迁移、`workflow.py` 与前端 `OBSERVATIONS`、`HANDOVERS`。观察信号在 Python `Signals`、SQL 表列、训练语料与前端 `FEATURES` 中对应。

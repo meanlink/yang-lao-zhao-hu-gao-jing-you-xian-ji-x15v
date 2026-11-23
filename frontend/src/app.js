@@ -7,10 +7,11 @@ import {handoversPage} from './handovers.js';
 import {careOperationsActions, contactsPage, followupsPage, responsesPage} from './careOperations.js';
 import {coverageActions, shiftCoveragePage} from './shiftCoverage.js';
 import {checkActions, responseChecksPage} from './responseChecks.js';
+import {modelVersionsPage} from './modelVersions.js';
 
 const app = document.querySelector('#app');
 const notice = document.querySelector('#notification');
-const routes = {alerts:['告警队列',alertsPage], residents:['住户档案',residentsPage], observations:['照护观察',observationsPage], handovers:['交班记录',handoversPage], responses:['照护响应',responsesPage], coverage:['值班覆盖',shiftCoveragePage], checks:['处置核对',responseChecksPage], contacts:['家属联络',contactsPage], followups:['交班后复查',followupsPage]};
+const routes = {alerts:['告警队列',alertsPage], residents:['住户档案',residentsPage], observations:['照护观察',observationsPage], handovers:['交班记录',handoversPage], responses:['照护响应',responsesPage], coverage:['值班覆盖',shiftCoveragePage], checks:['处置核对',responseChecksPage], contacts:['家属联络',contactsPage], followups:['交班后复查',followupsPage], versions:['分级版本',modelVersionsPage]};
 let noticeTimeout;
 
 function inform(message, failed=false) {
@@ -80,6 +81,19 @@ const actions = {
     await api(`/handovers/${form.dataset.id}/sign`,'POST',Object.fromEntries(data));
     return '签收完成，告警已交接';
   },
+  async 'register-version'(_form,data) {
+    await api('/model-versions','POST',{label:data.get('label'),corpus:data.get('corpus')});
+    return '新版样本已登记，可创建试算比对差异';
+  },
+  async 'activate-version'(form) {
+    const result = await api(`/model-versions/${form.dataset.id}/activate`,'POST',{});
+    return `已启用「${result.label}」，新登记的观察按新版分级`;
+  },
+  async 'create-trial'(form,data) {
+    const result = await api(`/model-versions/${form.dataset.id}/trial-runs`,'POST',{note:data.get('note') || null});
+    state.trialRun = result.id;
+    return `试算批次 #${result.id} 已创建，共 ${result.total} 条已评分观察`;
+  },
 };
 
 app.addEventListener('submit',async event=>{
@@ -118,6 +132,8 @@ app.addEventListener('click',event=>{
   if (action === 'unit') state.unit = value;
   if (action === 'supplement') state.supplement = Number(value);
   if (action === 'cancel-supplement') state.supplement = null;
+  if (action === 'trial-detail') state.trialRun = Number(value);
+  if (action === 'close-trial') state.trialRun = null;
   if (action === 'resident-observations') {
     state.observationResident = value;
     state.supplement = null;
